@@ -1,0 +1,129 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+}
+
+enum StarterType {
+  VFD
+  SD
+  DOL
+}
+
+model User {
+  id           String             @id @default(cuid())
+  username     String             @unique
+  passwordHash String
+  displayName  String
+  createdAt    DateTime           @default(now())
+  entries      CompressorEntry[]
+}
+
+model CompanyProfile {
+  id                 String             @id @default(cuid())
+  companyName        String
+  area               String
+  district           String
+  state              String
+  pincode            String
+  overallConsumption Float              @default(0)
+  updatedAt          DateTime           @updatedAt
+  compressors        CompressorEntry[]
+}
+
+model CompressorEntry {
+  id                   String          @id @default(cuid())
+  companyProfileId     String?
+  companyProfile       CompanyProfile? @relation(fields: [companyProfileId], references: [id], onDelete: Cascade)
+  machineTag           String
+  makeModel            String?
+  serialNo             String?
+  compressorType       String?         // "Reciprocating" | "Screw" | "Centrifugal" | "Scroll"
+  yearOfManufacture    String?
+  ratedCapacity        Float?          // rated capacity
+  ratedCapacityUnit    String?         // "m3/min", "l/s", "CFM", "CMH"
+  ratedPressure        Float?          // bar or psi
+  processPressure      Float?          // design process operating pressure
+  ratedKw              Float
+  ratedHp              Float?
+  ratedRpm             Float?
+  ratedCurrent         Float?          // rated current (Amps)
+  motorEfficiency      Float?          // rated motor efficiency %
+  annualOperatingDays  Float?          // annual operating days
+  powerCost            Float?          // electricity cost Rs/hour
+  starterType          StarterType     @default(DOL)
+  designedSec          Float?          // kW/CFM
+  designedAirGen       Float?          // CFM/kW
+  
+  // Electrical inputs (general)
+  v1                   Float?
+  v2                   Float?
+  v3                   Float?
+  i1                   Float?
+  i2                   Float?
+  i3                   Float?
+  pf                   Float?
+  measuredKw           Float
+  kva                  Float?
+  kvar                 Float?
+  loadFactor           Float
+  
+  // Free Air Delivery (FAD) test parameters
+  fadActive            Boolean         @default(false)
+  fadAreaType          String?         // "Rectangle", "Circle", "Direct"
+  fadAreaL             Float?
+  fadAreaB             Float?
+  fadAreaDia           Float?
+  fadAreaPeri          Float?
+  fadAreaRadius        Float?
+  fadAreaDirect        Float?
+  fadNumPoints         Int?
+  fadVelocities        String?         // serialized JSON string of velocities array
+  fadRunningPressure   Float?
+  fadMeasuredPower     Float?
+  fadSuctionArea       Float?
+  fadAvgVelocity       Float?
+  fadAirDeliveryM3Sec  Float?
+  fadAirDeliveryM3Hr   Float?
+  fadAirDeliveryCfm    Float?
+  fadActualSec         Float?
+  fadActualAirGen      Float?
+  fadDescription       String?
+  
+  // Pump Up test parameters
+  pumpActive           Boolean         @default(false)
+  pumpP1               Float?
+  pumpP2               Float?
+  pumpTimeSec          Float?
+  pumpTankVolume       Float?
+  pumpTankVolumeUnit   String?         // "Liters", "m3"
+  pumpTankCalcMethod   String?         // "Direct", "DiaLength", "PeriLength"
+  pumpTankDia          Float?
+  pumpTankLength       Float?
+  pumpTankPeri         Float?
+  pumpActualFadM3Min   Float?
+  pumpActualFadCfm     Float?
+  pumpDescription      String?
+
+  // legacy fields (fallback support)
+  fad                  Float?          // m3/min
+  operatingPressure    Float?          // bar
+  inletTemp            Float?          // °C
+  outletTemp           Float?          // °C
+  specificPower        Float?          // kW/(m3/min)
+  operatingHours       Float?          // hours/day
+  receiverTankPressure Float?          // bar
+  noLoadCurrent        Float?          // A
+  
+  photoPath            String?
+  description          String?
+  recordedBy           String?
+  createdAt            DateTime        @default(now())
+  createdById          String
+  createdBy            User            @relation(fields: [createdById], references: [id])
+
+  @@index([companyProfileId, createdAt])
+}
