@@ -12,6 +12,10 @@ if (fs.existsSync(apiPath)) {
 }
 
 try {
+  if (fs.existsSync(path.resolve(process.cwd(), '.next'))) {
+    console.log('Clearing .next cache...');
+    fs.rmSync(path.resolve(process.cwd(), '.next'), { recursive: true, force: true });
+  }
   execSync('npx cross-env NEXT_BUILD_TARGET=mobile next build', { stdio: 'inherit' });
 } catch (error) {
   console.error('Mobile build failed:', error.message);

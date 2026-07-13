@@ -59,6 +59,7 @@ model CompressorEntry {
   designedAirGen       Float?          // CFM/kW
   
   // Electrical inputs (general)
+  // Legacy electrical inputs (general)
   v1                   Float?
   v2                   Float?
   v3                   Float?
@@ -66,10 +67,25 @@ model CompressorEntry {
   i2                   Float?
   i3                   Float?
   pf                   Float?
-  measuredKw           Float
+  measuredKw           Float?
   kva                  Float?
   kvar                 Float?
-  loadFactor           Float
+  loadFactor           Float?
+
+  // New Electrical inputs (general)
+  genLoadVoltage       Float?
+  genLoadAmp           Float?
+  genLoadPf            Float?
+  genLoadKw            Float?
+  
+  genUnloadVoltage     Float?
+  genUnloadAmp         Float?
+  genUnloadPf          Float?
+  genUnloadKw          Float?
+
+  // Load/Unload Measurements Data
+  luType               String?
+  luData               String?
   
   // Free Air Delivery (FAD) test parameters
   fadActive            Boolean         @default(false)
@@ -106,6 +122,8 @@ model CompressorEntry {
   pumpTankPeri         Float?
   pumpActualFadM3Min   Float?
   pumpActualFadCfm     Float?
+  pumpRunningPressure  Float?
+  pumpMeasuredPower    Float?
   pumpDescription      String?
 
   // legacy fields (fallback support)
@@ -121,6 +139,18 @@ model CompressorEntry {
   photoPath            String?
   description          String?
   recordedBy           String?
+
+  // General Observations & Equipment Photo additional fields
+  obsCompSituation     Float?
+  obsCompDischarge     Float?
+  obsOilSap            Float?
+  obsOilRadiatorIn     Float?
+  obsOilRadiatorOut    Float?
+  obsAirRadiatorIn     Float?
+  obsAirRadiatorOut    Float?
+  obsCompFinalDischarge Float?
+  obsCompMotor         Float?
+  obsThermalImageNo    String?
   createdAt            DateTime        @default(now())
   createdById          String
   createdBy            User            @relation(fields: [createdById], references: [id])

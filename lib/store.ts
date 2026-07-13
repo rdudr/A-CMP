@@ -48,8 +48,7 @@ export type CompressorEntry = {
   starterType: 'DOL' | 'VFD' | 'SD';
   designedSec?: number | null;
   designedAirGen?: number | null;
-  
-  // Electrical inputs (general)
+  // Legacy Electrical inputs
   v1?: number | null;
   v2?: number | null;
   v3?: number | null;
@@ -57,11 +56,21 @@ export type CompressorEntry = {
   i2?: number | null;
   i3?: number | null;
   pf?: number | null;
-  measuredKw: number;
+  measuredKw?: number | null;
   kva?: number | null;
   kvar?: number | null;
-  loadFactor: number;
+  loadFactor?: number | null;
   
+  // New Electrical inputs
+  genLoadVoltage?: number | null;
+  genLoadAmp?: number | null;
+  genLoadPf?: number | null;
+  genLoadKw?: number | null;
+  genUnloadVoltage?: number | null;
+  genUnloadAmp?: number | null;
+  genUnloadPf?: number | null;
+  genUnloadKw?: number | null;
+
   // Free Air Delivery (FAD) test parameters
   fadActive?: boolean;
   fadAreaType?: string | null; // "Rectangle", "Circle", "Direct"
@@ -84,11 +93,22 @@ export type CompressorEntry = {
   fadActualAirGen?: number | null;
   fadDescription?: string | null;
   
+  // Load / Unload measurement table (rated parameters)
+  luType?: 'SD' | 'VFD' | null;
+  luData?: string | null; // serialized JSON of Val1/Val2/Val3 rows
+
+  // Load / Unload pressures (required when FAD or Pump-Up test is ticked)
+  loadPressure?: number | null;
+  unloadPressure?: number | null;
+
   // Pump Up test parameters
   pumpActive?: boolean;
   pumpP1?: number | null;
   pumpP2?: number | null;
   pumpTimeSec?: number | null;
+  pumpAirTempC?: number | null; // compressed air temperature (°C)
+  pumpTempFactor?: number | null; // 273 / (273 + T)
+  pumpLapData?: string | null; // serialized JSON [{pressure, timeSec, fadM3Min, fadCorrM3Min}]
   pumpTankVolume?: number | null;
   pumpTankVolumeUnit?: string | null; // "Liters", "m3"
   pumpTankCalcMethod?: string | null; // "Direct", "DiaLength", "PeriLength"
@@ -97,6 +117,8 @@ export type CompressorEntry = {
   pumpTankPeri?: number | null;
   pumpActualFadM3Min?: number | null;
   pumpActualFadCfm?: number | null;
+  pumpRunningPressure?: number | null;
+  pumpMeasuredPower?: number | null;
   pumpDescription?: string | null;
 
   // Legacy fields (support fallback)
@@ -112,6 +134,18 @@ export type CompressorEntry = {
   photoPath?: string | null;
   description?: string | null;
   recordedBy?: string | null;
+  
+  obsCompSituation?: number | null;
+  obsCompDischarge?: number | null;
+  obsOilSap?: number | null;
+  obsOilRadiatorIn?: number | null;
+  obsOilRadiatorOut?: number | null;
+  obsAirRadiatorIn?: number | null;
+  obsAirRadiatorOut?: number | null;
+  obsCompFinalDischarge?: number | null;
+  obsCompMotor?: number | null;
+  obsThermalImageNo?: string | null;
+
   createdAt: string;
   createdById: string;
 };
