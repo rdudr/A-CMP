@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { generateCompressorPDF } from "@/lib/pdf-generator";
+import { buildExcelBase64 } from "@/lib/compressor-excel";
 import { Resend } from "resend";
 
 export const runtime = 'nodejs';
@@ -71,7 +72,8 @@ export async function POST(req: Request) {
       }
 
       for (const c of (compressors ?? [])) {
-        const { id, companyProfileId, createdAt, createdById, ...data } = c;
+        // Client-only fields (not columns in prisma/schema.prisma) are dropped so the upsert does not reject the row
+        const { id, companyProfileId, createdAt, createdById, updatedAt, loadPressure, unloadPressure, pumpAirTempC, pumpTempFactor, pumpLapData, ...data } = c;
         await prisma.compressorEntry.upsert({
           where: { id: c.id },
           create: {
@@ -106,6 +108,9 @@ export async function POST(req: Request) {
     // Generate PDF buffer
     const pdfArrayBuffer = generateCompressorPDF(profile, compressors, reporterName || "Field Engineer");
     const pdfBuffer = Buffer.from(pdfArrayBuffer);
+    // The PostMan workbook rides along, so the report chapter needs no retyping
+    const excel = buildExcelBase64(profile, compressors, reporterName || "Field Engineer");
+    const excelBuffer = Buffer.from(excel.base64, "base64");
     
     const today = new Date();
     const ddmm = `${String(today.getDate()).padStart(2, "0")}${String(today.getMonth() + 1).padStart(2, "0")}`;
@@ -128,7 +133,7 @@ export async function POST(req: Request) {
   <ul style="color: #666;">
     <li>Compressors Synced: ${compressors?.length ?? 0}</li>
   </ul>
-  <p>Please find the compiled PDF auditing report attached.</p>
+  <p>Attached: the PDF assessment report and the Excel workbook (<em>Compressor Entries</em>) that drops straight into PostMan's Air compressor chapter.</p>
   <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
   <p style="font-size: 12px; color: #999;">
     A-CMP — Air Compressor Auditing Platform<br>
@@ -156,10 +161,8 @@ export async function POST(req: Request) {
         subject: emailSubject,
         html: emailBody,
         attachments: [
-          {
-            filename,
-            content: pdfBuffer,
-          },
+          { filename, content: pdfBuffer },
+          { filename: excel.filename, content: excelBuffer },
         ],
       });
 
@@ -175,10 +178,8 @@ export async function POST(req: Request) {
       subject: emailSubject,
       html: emailBody,
       attachments: [
-        {
-          filename,
-          content: pdfBuffer,
-        },
+        { filename, content: pdfBuffer },
+        { filename: excel.filename, content: excelBuffer },
       ],
     });
 

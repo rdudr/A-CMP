@@ -353,6 +353,27 @@ export default function CompressorsPage() {
 
   const nextLapIndex = lapTimes.findIndex((t) => t === null);
 
+  // Start = the motor starts at the first pressure step, so that row is
+  // lap 1 at exactly 0.0 s — the engineer never has to hit Lap twice in a
+  // row. Resume (watch already past zero) just carries on.
+  function handleSwStart() {
+    if (pumpPressureRows.length === 0 || nextLapIndex === -1) return;
+    const fresh = swElapsed === 0 && nextLapIndex === 0;
+    if (fresh) {
+      setLapTimes((prev) => {
+        const next = [...prev];
+        next[0] = 0;
+        return next;
+      });
+      // A single-row table (P2 at the first step) is complete the moment it starts
+      if (lapTimes.length === 1) {
+        setForm((prev) => ({ ...prev, pumpTimeSec: "0" }));
+        return;
+      }
+    }
+    setSwRunning(true);
+  }
+
   function handleLap() {
     if (!swRunning || nextLapIndex === -1) return;
     const stamped = parseFloat(swElapsed.toFixed(1));
@@ -1515,7 +1536,7 @@ export default function CompressorsPage() {
                       <div className="text-4xl font-mono font-bold text-white tabular-nums">{formatSw(swElapsed)}</div>
                       <div className="flex flex-wrap justify-center gap-2">
                         {!swRunning ? (
-                          <Button type="button" onClick={() => setSwRunning(true)} className="gap-1.5" disabled={pumpPressureRows.length === 0 || nextLapIndex === -1}>
+                          <Button type="button" onClick={handleSwStart} className="gap-1.5" disabled={pumpPressureRows.length === 0 || nextLapIndex === -1}>
                             <Play className="size-4" /> {swElapsed > 0 ? "Resume" : "Start"}
                           </Button>
                         ) : (
@@ -1529,7 +1550,7 @@ export default function CompressorsPage() {
                         </Button>
                       </div>
                       <p className="text-[10px] text-slate-500 text-center max-w-md">
-                        Press Start when the motor starts at 0 bar, then press Lap at every pressure step in the table — the time is fed automatically in serial order.
+                        Press Start when the motor starts at 0 bar — that first row is stamped 0.0 s for you. Then press Lap at every following pressure step; the time is fed in serial order.
                         The watch stops itself when the last step is fed. Use Stop for any sudden accident and Resume to continue.
                       </p>
                     </div>

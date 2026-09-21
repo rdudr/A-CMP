@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
 import { generateCompressorPDF } from "@/lib/pdf-generator";
+import { buildExcelBase64 } from "@/lib/compressor-excel";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -30,6 +31,9 @@ export async function POST(req: Request) {
     // ── Build the PDF Report Buffer ───────────────────────────────────────
     const pdfArrayBuffer = generateCompressorPDF(profile, compressors, reporterName || "Field Engineer");
     const pdfBuffer = Buffer.from(pdfArrayBuffer);
+    // The PostMan workbook rides along, so the report chapter needs no retyping
+    const excel = buildExcelBase64(profile, compressors, reporterName || "Field Engineer");
+    const excelBuffer = Buffer.from(excel.base64, "base64");
     
     const today = new Date();
     const ddmm = `${String(today.getDate()).padStart(2, "0")}${String(today.getMonth() + 1).padStart(2, "0")}`;
@@ -53,7 +57,7 @@ export async function POST(req: Request) {
   <ul style="color: #666;">
     <li>Compressors Recorded: ${compressors.length}</li>
   </ul>
-  <p>Please find the detailed PDF auditing report attached for your reference and further analysis.</p>
+  <p>Attached: the PDF assessment report and the Excel workbook (<em>Compressor Entries</em>) that drops straight into PostMan's Air compressor chapter.</p>
   <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
   <p style="font-size: 12px; color: #999;">
     A-CMP — Air Compressor Auditing Platform<br>
@@ -85,10 +89,8 @@ export async function POST(req: Request) {
         subject: emailSubject,
         html: emailBody,
         attachments: [
-          {
-            filename,
-            content: pdfBuffer,
-          },
+          { filename, content: pdfBuffer },
+          { filename: excel.filename, content: excelBuffer },
         ],
       });
 
@@ -106,10 +108,8 @@ export async function POST(req: Request) {
       subject: emailSubject,
       html: emailBody,
       attachments: [
-        {
-          filename,
-          content: pdfBuffer,
-        },
+        { filename, content: pdfBuffer },
+        { filename: excel.filename, content: excelBuffer },
       ],
     });
 

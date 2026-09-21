@@ -147,6 +147,7 @@ export type CompressorEntry = {
   obsThermalImageNo?: string | null;
 
   createdAt: string;
+  updatedAt?: string | null; // last local save — the team-merge tie-breaker (newest wins)
   createdById: string;
 };
 
@@ -186,9 +187,11 @@ export const useAppStore = create<AppState>()(
 
       setProfile: (profile) => set({ profile }),
 
-      addCompressor: (compressor) => set((state) => ({ compressors: [...state.compressors, compressor] })),
+      addCompressor: (compressor) => set((state) => ({
+        compressors: [...state.compressors, { updatedAt: new Date().toISOString(), ...compressor }]
+      })),
       updateCompressor: (id, updatedCompressor) => set((state) => ({
-        compressors: state.compressors.map(c => c.id === id ? { ...c, ...updatedCompressor } : c)
+        compressors: state.compressors.map(c => c.id === id ? { ...c, ...updatedCompressor, updatedAt: new Date().toISOString() } : c)
       })),
       deleteCompressor: (id) => set((state) => ({
         compressors: state.compressors.filter(c => c.id !== id)
