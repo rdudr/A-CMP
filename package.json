@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "node scripts/prepare-vercel.mjs && prisma generate && prisma db push --accept-data-loss && npx tsx prisma/seed.ts && next build",
+    "build": "node scripts/prepare-vercel.mjs && prisma generate && next build",
+    "db:deploy": "prisma db push --accept-data-loss && tsx prisma/seed.ts",
     "build:mobile": "prisma generate && node scripts/build-mobile.mjs",
     "export:apk": "node scripts/export-apk.mjs",
     "start": "next start",
