@@ -17,7 +17,9 @@ import { Capacitor } from "@capacitor/core";
 import { generateCompressorPDF } from "@/lib/pdf-generator";
 import {
   exportCompressorsExcel, shareCompressorsExcel, mergeCompressorsFromWorkbook, readWorkbookFile,
+  buildExcelBase64, ACMP_FORMAT,
 } from "@/lib/compressor-excel";
+import { captureHandoff, sendToPostman, type PostmanHandoff } from "@/lib/postman-handoff";
 
 export default function ReportPage() {
   const profile = useAppStore((s) => s.profile);
@@ -37,9 +39,16 @@ export default function ReportPage() {
   const [sharingExcel, setSharingExcel] = useState(false);
   const [importing, setImporting] = useState(false);
   const [syncingQueue, setSyncingQueue] = useState(false);
+  const [handoff, setHandoff] = useState<PostmanHandoff | null>(null);
+  const [handedOver, setHandedOver] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
   const [isNative, setIsNative] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  /* Did PostMan open us? Only then is there anywhere to send to. */
+  useEffect(() => {
+    setHandoff(captureHandoff());
+  }, []);
 
   useEffect(() => {
     setIsOnline(navigator.onLine);
@@ -204,6 +213,21 @@ export default function ReportPage() {
       toast.error(err?.message || "Failed to export Excel");
     } finally {
       setExportingExcel(false);
+    }
+  }
+
+  /* The same bytes handleExportExcel would have written to disk, handed
+     straight to the window that opened us. PostMan reads them with its
+     ordinary importer, so there is nothing here it does not already
+     understand. */
+  function handleSendToPostman() {
+    const { base64 } = buildExcelBase64(profile, compressors, engineer);
+    const r = sendToPostman(base64, profile?.companyName || "", ACMP_FORMAT);
+    if (r.ok) {
+      setHandedOver(true);
+      toast.success(`${compressors.length} compressor(s) sent to PostMan \u2713`);
+    } else {
+      toast.error(`${r.reason} Export the Excel file and drop it into PostMan instead.`);
     }
   }
 
@@ -383,6 +407,44 @@ export default function ReportPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* ── Handed over from PostMan ──────────────────────── */}
+      {handoff && (
+        <Card className="bg-slate-950/40 border-emerald-500/25 backdrop-blur-md">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Send className="size-5 text-emerald-400" />
+              Send to PostMan
+            </CardTitle>
+            <CardDescription className="text-xs text-slate-400">
+              Opened from the report for{" "}
+              <span className="text-slate-200">{handoff.company || "this plant"}</span>
+              {handoff.fy ? ` (${handoff.fy})` : ""}. This sends the same Excel workbook the
+              Export button writes — PostMan reads it exactly as if you had dropped the
+              file in, and refuses it if the plant name does not match its own.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Button
+              onClick={handleSendToPostman}
+              disabled={compressors.length === 0}
+              className="w-full gap-2 font-semibold"
+            >
+              <Send className="size-4" />
+              {handedOver ? "Send again" : `Send ${compressors.length} compressor(s) to PostMan`}
+            </Button>
+            {compressors.length === 0 && (
+              <p className="text-[10px] text-slate-500">Add at least one compressor first.</p>
+            )}
+            {handedOver && (
+              <p className="text-[10px] text-emerald-400/90">
+                Sent. Anything you change here can be sent again — PostMan merges by
+                machine tag, so nothing is duplicated.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* ── Team data exchange (Excel) ─────────────────────────────────────── */}
       <Card className="bg-slate-950/40 border-white/10 backdrop-blur-md">
