@@ -32,20 +32,28 @@ export const n = (v: unknown): number | null => {
   return Number.isFinite(x) ? x : null;
 };
 
-/** Bore area of a pipe from the tape measurement around it. mm → m². */
-export function pipeAreaM2(perimeterMm: unknown): number | null {
-  const p = n(perimeterMm);
+/** Bore area of a pipe from the tape measurement around it. Returns m². */
+export function pipeAreaM2(perimeter: unknown, periUnit?: string | null): number | null {
+  const p = n(perimeter);
   if (p === null || p <= 0) return null;
-  const pm = p / 1000;
+  const unit = periUnit ?? (p > 50 ? "mm" : "m");
+  const pm = unit === "m" ? p : unit === "cm" ? p / 100 : p / 1000;
   return (pm * pm) / (4 * Math.PI);
 }
 
-/** Volume of one pipe run, from perimeter and length only. mm → m³. */
-export function pipeVolumeM3(perimeterMm: unknown, lengthMm: unknown): number | null {
-  const area = pipeAreaM2(perimeterMm);
-  const l = n(lengthMm);
+/** Volume of one pipe run, from perimeter and length. Returns m³. */
+export function pipeVolumeM3(
+  perimeter: unknown,
+  length: unknown,
+  periUnit?: string | null,
+  lenUnit?: string | null
+): number | null {
+  const area = pipeAreaM2(perimeter, periUnit);
+  const l = n(length);
   if (area === null || l === null || l <= 0) return null;
-  return area * (l / 1000);
+  const unit = lenUnit ?? (l > 100 ? "mm" : "m");
+  const lm = unit === "m" ? l : unit === "cm" ? l / 100 : l / 1000;
+  return area * lm;
 }
 
 /** The receiver on its own, in m³, whichever way it was entered. */
@@ -67,8 +75,12 @@ export type MainVolume = {
 
 export function mainVolume(c: Partial<CompressorEntry>): MainVolume {
   const tank = tankVolumeM3(c);
-  const inlet = c.pumpInletPipeActive ? pipeVolumeM3(c.pumpInletPipePeri, c.pumpInletPipeLength) : null;
-  const outlet = c.pumpOutletPipeActive ? pipeVolumeM3(c.pumpOutletPipePeri, c.pumpOutletPipeLength) : null;
+  const inlet = c.pumpInletPipeActive
+    ? pipeVolumeM3(c.pumpInletPipePeri, c.pumpInletPipeLength, c.pumpInletPipePeriUnit, c.pumpInletPipeLenUnit)
+    : null;
+  const outlet = c.pumpOutletPipeActive
+    ? pipeVolumeM3(c.pumpOutletPipePeri, c.pumpOutletPipeLength, c.pumpOutletPipePeriUnit, c.pumpOutletPipeLenUnit)
+    : null;
   const parts = [tank, inlet, outlet].filter((v): v is number => v !== null && v > 0);
   const total = parts.length ? parts.reduce((s, v) => s + v, 0) : null;
 

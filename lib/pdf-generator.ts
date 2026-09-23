@@ -852,13 +852,13 @@ export function generateCompressorPDF(
         : c.pumpTankCalcMethod === "PeriLength"
           ? `from perimeter ${txt(c.pumpTankPeri)} mm × length ${txt(c.pumpTankLength)} mm`
           : "entered directly";
-      const pipeLine = (label: string, active: boolean | undefined, peri: unknown, len: unknown, vol: number | null) =>
+      const pipeLine = (label: string, active: boolean | undefined, peri: unknown, len: unknown, vol: number | null, periUnit?: string | null, lenUnit?: string | null) =>
         active && vol !== null
-          ? [`${label} pipe`, `perimeter ${txt(peri)} mm × length ${txt(len)} mm  →  bore ${fmt(pipeAreaM2(peri), 5, "m²")}  ·  ${vol.toFixed(4)} m³`] as [string, string]
+          ? [`${label} pipe`, `perimeter ${txt(peri)} ${txt(periUnit, "mm")} × length ${txt(len)} ${txt(lenUnit, "m")}  →  bore ${fmt(pipeAreaM2(peri, periUnit), 5, "m²")}  ·  ${vol.toFixed(4)} m³`] as [string, string]
           : null;
       const pipeRows = [
-        pipeLine("Inlet", c.pumpInletPipeActive, c.pumpInletPipePeri, c.pumpInletPipeLength, mv.inlet),
-        pipeLine("Outlet", c.pumpOutletPipeActive, c.pumpOutletPipePeri, c.pumpOutletPipeLength, mv.outlet),
+        pipeLine("Inlet", c.pumpInletPipeActive, c.pumpInletPipePeri, c.pumpInletPipeLength, mv.inlet, c.pumpInletPipePeriUnit, c.pumpInletPipeLenUnit),
+        pipeLine("Outlet", c.pumpOutletPipeActive, c.pumpOutletPipePeri, c.pumpOutletPipeLength, mv.outlet, c.pumpOutletPipePeriUnit, c.pumpOutletPipeLenUnit),
       ].filter((r): r is [string, string] => r !== null);
       y = kvTable(doc, y, [
         ["Receiver volume", `${fmt(c.pumpTankVolume, 2, txt(c.pumpTankVolumeUnit, ""))}${mv.tank !== null ? `  (${mv.tank.toFixed(3)} m³)` : ""}`],

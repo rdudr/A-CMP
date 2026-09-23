@@ -38,8 +38,8 @@ export const COMPRESSOR_FIELDS = [
   "luType", "luData", "loadPressure", "unloadPressure",
   "pumpActive", "pumpP1", "pumpP2", "pumpTimeSec", "pumpAirTempC", "pumpTempFactor", "pumpLapData",
   "pumpTankVolume", "pumpTankVolumeUnit", "pumpTankCalcMethod", "pumpTankDia", "pumpTankLength", "pumpTankPeri",
-  "pumpInletPipeActive", "pumpInletPipePeri", "pumpInletPipeLength",
-  "pumpOutletPipeActive", "pumpOutletPipePeri", "pumpOutletPipeLength", "pumpMainVolumeM3",
+  "pumpInletPipeActive", "pumpInletPipePeri", "pumpInletPipePeriUnit", "pumpInletPipeLength", "pumpInletPipeLenUnit",
+  "pumpOutletPipeActive", "pumpOutletPipePeri", "pumpOutletPipePeriUnit", "pumpOutletPipeLength", "pumpOutletPipeLenUnit", "pumpMainVolumeM3",
   "pumpActualFadM3Min", "pumpActualFadCfm", "pumpRunningPressure", "pumpMeasuredPower", "pumpDescription",
   "fad", "operatingPressure", "inletTemp", "outletTemp", "specificPower", "operatingHours", "receiverTankPressure", "noLoadCurrent",
   "photoPath", "description", "recordedBy",
@@ -58,7 +58,7 @@ export const DERIVED_FIELDS = [
 const STRING_FIELDS = new Set<string>([
   "id", "machineTag", "makeModel", "serialNo", "compressorType", "yearOfManufacture", "ratedCapacityUnit",
   "starterType", "fadAreaType", "fadVelocities", "fadDescription", "luType", "luData", "pumpLapData",
-  "pumpTankVolumeUnit", "pumpTankCalcMethod", "pumpDescription", "photoPath", "description", "recordedBy",
+  "pumpTankVolumeUnit", "pumpTankCalcMethod", "pumpInletPipePeriUnit", "pumpInletPipeLenUnit", "pumpOutletPipePeriUnit", "pumpOutletPipeLenUnit", "pumpDescription", "photoPath", "description", "recordedBy",
   "obsThermalImageNo", "createdAt", "updatedAt", "createdById",
 ]);
 const BOOL_FIELDS = new Set<string>(["fadActive", "pumpActive", "pumpInletPipeActive", "pumpOutletPipeActive"]);

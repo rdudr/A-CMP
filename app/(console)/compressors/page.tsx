@@ -81,10 +81,14 @@ export default function CompressorsPage() {
     pumpTankPeri: "",
     pumpInletPipeActive: false,
     pumpInletPipePeri: "",
+    pumpInletPipePeriUnit: "mm",
     pumpInletPipeLength: "",
+    pumpInletPipeLenUnit: "m",
     pumpOutletPipeActive: false,
     pumpOutletPipePeri: "",
+    pumpOutletPipePeriUnit: "mm",
     pumpOutletPipeLength: "",
+    pumpOutletPipeLenUnit: "m",
     pumpAirTempC: "",
     pumpRunningPressure: "",
     pumpMeasuredPower: "",
@@ -310,10 +314,64 @@ export default function CompressorsPage() {
 
   const pumpTankVolumeM3 = computePumpTankVolumeM3();
 
+  const convertLengthValue = (valStr: string, oldUnit: string, newUnit: string): string => {
+    if (!valStr || isNaN(Number(valStr))) return valStr;
+    const num = Number(valStr);
+    let inMeters = num;
+    if (oldUnit === "cm") inMeters = num / 100;
+    else if (oldUnit === "mm") inMeters = num / 1000;
+
+    let converted = inMeters;
+    if (newUnit === "cm") converted = inMeters * 100;
+    else if (newUnit === "mm") converted = inMeters * 1000;
+
+    return Number.isInteger(converted) ? String(converted) : String(Number(converted.toFixed(4)));
+  };
+
+  const convertPeriValue = (valStr: string, oldUnit: string, newUnit: string): string => {
+    if (!valStr || isNaN(Number(valStr))) return valStr;
+    const num = Number(valStr);
+    let inMm = num;
+    if (oldUnit === "cm") inMm = num * 10;
+    else if (oldUnit === "m") inMm = num * 1000;
+
+    let converted = inMm;
+    if (newUnit === "cm") converted = inMm / 10;
+    else if (newUnit === "m") converted = inMm / 1000;
+
+    return Number.isInteger(converted) ? String(converted) : String(Number(converted.toFixed(4)));
+  };
+
+  const handleLenUnitChange = (lenField: string, unitField: string, newUnit: string) => {
+    const oldUnit = (form as any)[unitField] || "m";
+    const currentVal = (form as any)[lenField] || "";
+    const convertedVal = convertLengthValue(currentVal, oldUnit, newUnit);
+    setForm(prev => ({
+      ...prev,
+      [unitField]: newUnit,
+      [lenField]: convertedVal,
+    }));
+  };
+
+  const handlePeriUnitChange = (periField: string, unitField: string, newUnit: string) => {
+    const oldUnit = (form as any)[unitField] || "mm";
+    const currentVal = (form as any)[periField] || "";
+    const convertedVal = convertPeriValue(currentVal, oldUnit, newUnit);
+    setForm(prev => ({
+      ...prev,
+      [unitField]: newUnit,
+      [periField]: convertedVal,
+    }));
+  };
+
   // Main volume = receiver + the pipe runs either side of it. Both pipes are
   // optional; each is measured with a tape, so perimeter and length only.
-  const pumpInletPipeVolM3 = form.pumpInletPipeActive ? (pipeVolumeM3(form.pumpInletPipePeri, form.pumpInletPipeLength) ?? 0) : 0;
-  const pumpOutletPipeVolM3 = form.pumpOutletPipeActive ? (pipeVolumeM3(form.pumpOutletPipePeri, form.pumpOutletPipeLength) ?? 0) : 0;
+  const pumpInletPipeVolM3 = form.pumpInletPipeActive
+    ? (pipeVolumeM3(form.pumpInletPipePeri, form.pumpInletPipeLength, form.pumpInletPipePeriUnit, form.pumpInletPipeLenUnit) ?? 0)
+    : 0;
+  const pumpOutletPipeVolM3 = form.pumpOutletPipeActive
+    ? (pipeVolumeM3(form.pumpOutletPipePeri, form.pumpOutletPipeLength, form.pumpOutletPipePeriUnit, form.pumpOutletPipeLenUnit) ?? 0)
+    : 0;
   const pumpMainVolumeM3 = pumpTankVolumeM3 + pumpInletPipeVolM3 + pumpOutletPipeVolM3;
 
   const pumpP1 = parseFloat(form.pumpP1) || 0;
@@ -578,10 +636,14 @@ export default function CompressorsPage() {
       pumpTankPeri: form.pumpActive && form.pumpTankCalcMethod === "PeriLength" ? parseFloat(form.pumpTankPeri) : undefined,
       pumpInletPipeActive: form.pumpActive ? form.pumpInletPipeActive : undefined,
       pumpInletPipePeri: form.pumpActive && form.pumpInletPipeActive ? parseFloat(form.pumpInletPipePeri) : undefined,
+      pumpInletPipePeriUnit: form.pumpActive && form.pumpInletPipeActive ? form.pumpInletPipePeriUnit : undefined,
       pumpInletPipeLength: form.pumpActive && form.pumpInletPipeActive ? parseFloat(form.pumpInletPipeLength) : undefined,
+      pumpInletPipeLenUnit: form.pumpActive && form.pumpInletPipeActive ? form.pumpInletPipeLenUnit : undefined,
       pumpOutletPipeActive: form.pumpActive ? form.pumpOutletPipeActive : undefined,
       pumpOutletPipePeri: form.pumpActive && form.pumpOutletPipeActive ? parseFloat(form.pumpOutletPipePeri) : undefined,
+      pumpOutletPipePeriUnit: form.pumpActive && form.pumpOutletPipeActive ? form.pumpOutletPipePeriUnit : undefined,
       pumpOutletPipeLength: form.pumpActive && form.pumpOutletPipeActive ? parseFloat(form.pumpOutletPipeLength) : undefined,
+      pumpOutletPipeLenUnit: form.pumpActive && form.pumpOutletPipeActive ? form.pumpOutletPipeLenUnit : undefined,
       pumpMainVolumeM3: form.pumpActive ? pumpMainVolumeM3 : undefined,
       pumpActualFadM3Min: form.pumpActive ? pumpActualFadM3Min : undefined,
       pumpActualFadCfm: form.pumpActive ? pumpActualFadCfm : undefined,
@@ -670,10 +732,14 @@ export default function CompressorsPage() {
       pumpTankPeri: "",
       pumpInletPipeActive: false,
       pumpInletPipePeri: "",
+      pumpInletPipePeriUnit: "mm",
       pumpInletPipeLength: "",
+      pumpInletPipeLenUnit: "m",
       pumpOutletPipeActive: false,
       pumpOutletPipePeri: "",
+      pumpOutletPipePeriUnit: "mm",
       pumpOutletPipeLength: "",
+      pumpOutletPipeLenUnit: "m",
       pumpAirTempC: "",
       pumpRunningPressure: "",
       pumpMeasuredPower: "",
@@ -767,10 +833,14 @@ export default function CompressorsPage() {
       pumpTankPeri: c.pumpTankPeri?.toString() || "",
       pumpInletPipeActive: !!c.pumpInletPipeActive,
       pumpInletPipePeri: c.pumpInletPipePeri?.toString() || "",
+      pumpInletPipePeriUnit: c.pumpInletPipePeriUnit || (c.pumpInletPipePeri && c.pumpInletPipePeri <= 50 ? "m" : "mm"),
       pumpInletPipeLength: c.pumpInletPipeLength?.toString() || "",
+      pumpInletPipeLenUnit: c.pumpInletPipeLenUnit || (c.pumpInletPipeLength && c.pumpInletPipeLength > 100 ? "mm" : "m"),
       pumpOutletPipeActive: !!c.pumpOutletPipeActive,
       pumpOutletPipePeri: c.pumpOutletPipePeri?.toString() || "",
+      pumpOutletPipePeriUnit: c.pumpOutletPipePeriUnit || (c.pumpOutletPipePeri && c.pumpOutletPipePeri <= 50 ? "m" : "mm"),
       pumpOutletPipeLength: c.pumpOutletPipeLength?.toString() || "",
+      pumpOutletPipeLenUnit: c.pumpOutletPipeLenUnit || (c.pumpOutletPipeLength && c.pumpOutletPipeLength > 100 ? "mm" : "m"),
       pumpAirTempC: c.pumpAirTempC?.toString() || "",
       pumpRunningPressure: c.pumpRunningPressure?.toString() || "",
       pumpMeasuredPower: c.pumpMeasuredPower?.toString() || "",
@@ -1515,8 +1585,26 @@ export default function CompressorsPage() {
                       </p>
 
                       {([
-                        { key: "Inlet", active: "pumpInletPipeActive", peri: "pumpInletPipePeri", len: "pumpInletPipeLength", vol: pumpInletPipeVolM3, hint: "compressor → receiver" },
-                        { key: "Outlet", active: "pumpOutletPipeActive", peri: "pumpOutletPipePeri", len: "pumpOutletPipeLength", vol: pumpOutletPipeVolM3, hint: "receiver → plant header" },
+                        {
+                          key: "Inlet",
+                          active: "pumpInletPipeActive",
+                          peri: "pumpInletPipePeri",
+                          periUnit: "pumpInletPipePeriUnit",
+                          len: "pumpInletPipeLength",
+                          lenUnit: "pumpInletPipeLenUnit",
+                          vol: pumpInletPipeVolM3,
+                          hint: "compressor → receiver"
+                        },
+                        {
+                          key: "Outlet",
+                          active: "pumpOutletPipeActive",
+                          peri: "pumpOutletPipePeri",
+                          periUnit: "pumpOutletPipePeriUnit",
+                          len: "pumpOutletPipeLength",
+                          lenUnit: "pumpOutletPipeLenUnit",
+                          vol: pumpOutletPipeVolM3,
+                          hint: "receiver → plant header"
+                        },
                       ] as const).map((pipe) => (
                         <div key={pipe.key} className="mb-3 last:mb-0">
                           <label className="flex items-center gap-2 cursor-pointer mb-2">
@@ -1532,13 +1620,51 @@ export default function CompressorsPage() {
                           {form[pipe.active] && (
                             <div className="grid gap-3 md:grid-cols-3 pl-6">
                               <div>
-                                <Label className="text-[10px] text-slate-400">Perimeter (mm)</Label>
-                                <Input className="h-8 text-xs mt-1" type="number" step="1" value={form[pipe.peri]} onChange={(e) => setForm({ ...form, [pipe.peri]: e.target.value })} placeholder="e.g. 250" />
+                                <Label className="text-[10px] text-slate-400">Perimeter</Label>
+                                <div className="flex mt-1">
+                                  <Input
+                                    className="h-8 text-xs rounded-r-none border-r-0"
+                                    type="number"
+                                    step="any"
+                                    value={form[pipe.peri]}
+                                    onChange={(e) => setForm({ ...form, [pipe.peri]: e.target.value })}
+                                    placeholder={form[pipe.periUnit] === "m" ? "e.g. 0.25" : form[pipe.periUnit] === "cm" ? "e.g. 25" : "e.g. 250"}
+                                  />
+                                  <select
+                                    className="h-8 rounded-r-md border border-white/10 bg-slate-950 px-2 text-xs text-slate-200 select-none"
+                                    value={form[pipe.periUnit]}
+                                    onChange={(e) => handlePeriUnitChange(pipe.peri, pipe.periUnit, e.target.value)}
+                                  >
+                                    <option value="mm">mm</option>
+                                    <option value="cm">cm</option>
+                                    <option value="m">m</option>
+                                  </select>
+                                </div>
                               </div>
+
                               <div>
-                                <Label className="text-[10px] text-slate-400">Length (mm)</Label>
-                                <Input className="h-8 text-xs mt-1" type="number" step="1" value={form[pipe.len]} onChange={(e) => setForm({ ...form, [pipe.len]: e.target.value })} placeholder="e.g. 6000" />
+                                <Label className="text-[10px] text-slate-400">Length</Label>
+                                <div className="flex mt-1">
+                                  <Input
+                                    className="h-8 text-xs rounded-r-none border-r-0"
+                                    type="number"
+                                    step="any"
+                                    value={form[pipe.len]}
+                                    onChange={(e) => setForm({ ...form, [pipe.len]: e.target.value })}
+                                    placeholder={form[pipe.lenUnit] === "m" ? "e.g. 6.0" : form[pipe.lenUnit] === "cm" ? "e.g. 600" : "e.g. 6000"}
+                                  />
+                                  <select
+                                    className="h-8 rounded-r-md border border-white/10 bg-slate-950 px-2 text-xs text-slate-200 select-none font-medium"
+                                    value={form[pipe.lenUnit]}
+                                    onChange={(e) => handleLenUnitChange(pipe.len, pipe.lenUnit, e.target.value)}
+                                  >
+                                    <option value="m">m (metres)</option>
+                                    <option value="cm">cm</option>
+                                    <option value="mm">mm</option>
+                                  </select>
+                                </div>
                               </div>
+
                               <div className="flex items-end text-[11px] text-slate-400 pb-1.5">
                                 Volume: <strong className="text-white ml-1.5">{pipe.vol.toFixed(4)} m³</strong>
                               </div>
