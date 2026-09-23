@@ -1,6 +1,7 @@
 import * as XLSX from "xlsx";
 import { Capacitor } from "@capacitor/core";
 import type { CompanyProfile, CompressorEntry } from "@/lib/store";
+import { mainVolume } from "@/lib/compressor-calc";
 
 // The Capacitor plugins are imported lazily so this module can also run on
 // the server, where the email route attaches the same workbook.
@@ -37,6 +38,8 @@ export const COMPRESSOR_FIELDS = [
   "luType", "luData", "loadPressure", "unloadPressure",
   "pumpActive", "pumpP1", "pumpP2", "pumpTimeSec", "pumpAirTempC", "pumpTempFactor", "pumpLapData",
   "pumpTankVolume", "pumpTankVolumeUnit", "pumpTankCalcMethod", "pumpTankDia", "pumpTankLength", "pumpTankPeri",
+  "pumpInletPipeActive", "pumpInletPipePeri", "pumpInletPipeLength",
+  "pumpOutletPipeActive", "pumpOutletPipePeri", "pumpOutletPipeLength", "pumpMainVolumeM3",
   "pumpActualFadM3Min", "pumpActualFadCfm", "pumpRunningPressure", "pumpMeasuredPower", "pumpDescription",
   "fad", "operatingPressure", "inletTemp", "outletTemp", "specificPower", "operatingHours", "receiverTankPressure", "noLoadCurrent",
   "photoPath", "description", "recordedBy",
@@ -47,7 +50,10 @@ export const COMPRESSOR_FIELDS = [
 
 // Columns PostMan needs that are not stored as-is on the record. They are
 // written after the record fields and ignored when a file is imported back.
-export const DERIVED_FIELDS = ["pumpTankVolumeM3", "luLoadHours", "luUnloadHours", "luTotalHours"] as const;
+export const DERIVED_FIELDS = [
+  "pumpTankVolumeM3", "pumpInletPipeVolumeM3", "pumpOutletPipeVolumeM3", "pumpMainVolumeM3Calc",
+  "luLoadHours", "luUnloadHours", "luTotalHours",
+] as const;
 
 const STRING_FIELDS = new Set<string>([
   "id", "machineTag", "makeModel", "serialNo", "compressorType", "yearOfManufacture", "ratedCapacityUnit",
@@ -55,7 +61,7 @@ const STRING_FIELDS = new Set<string>([
   "pumpTankVolumeUnit", "pumpTankCalcMethod", "pumpDescription", "photoPath", "description", "recordedBy",
   "obsThermalImageNo", "createdAt", "updatedAt", "createdById",
 ]);
-const BOOL_FIELDS = new Set<string>(["fadActive", "pumpActive"]);
+const BOOL_FIELDS = new Set<string>(["fadActive", "pumpActive", "pumpInletPipeActive", "pumpOutletPipeActive"]);
 
 const PROFILE_ROWS: [string, keyof CompanyProfile][] = [
   ["Company Name", "companyName"],
@@ -68,11 +74,7 @@ const PROFILE_ROWS: [string, keyof CompanyProfile][] = [
 
 // ── Derived figures ─────────────────────────────────────────────────────────
 
-export function tankVolumeM3(c: CompressorEntry): number | null {
-  const v = Number(c.pumpTankVolume);
-  if (!isFinite(v) || v <= 0) return null;
-  return c.pumpTankVolumeUnit === "Liters" ? v / 1000 : v;
-}
+export { tankVolumeM3, mainVolume, pipeVolumeM3 } from "@/lib/compressor-calc";
 
 /** Load / unload / total run hours from the 3-reading table: last reading − first reading. */
 export function luHours(c: CompressorEntry): { load: number | null; unload: number | null; total: number | null } {
@@ -118,7 +120,12 @@ export function buildCompressorWorkbook(
       row[f] = v === null || v === undefined ? "" : v;
     }
     const hrs = luHours(c);
-    row.pumpTankVolumeM3 = tankVolumeM3(c) ?? "";
+    const mv = mainVolume(c);
+    row.pumpTankVolumeM3 = mv.tank ?? "";
+    row.pumpInletPipeVolumeM3 = mv.inlet ?? "";
+    row.pumpOutletPipeVolumeM3 = mv.outlet ?? "";
+    // The volume the pump-up FAD is actually worked from: tank + whichever pipes were measured.
+    row.pumpMainVolumeM3Calc = mv.total ?? "";
     row.luLoadHours = hrs.load ?? "";
     row.luUnloadHours = hrs.unload ?? "";
     row.luTotalHours = hrs.total ?? "";

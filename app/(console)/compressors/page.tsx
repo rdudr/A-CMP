@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useAppStore, CompressorEntry } from "@/lib/store";
+import { pipeVolumeM3 } from "@/lib/compressor-calc";
 import { useAuthStore } from "@/lib/auth-store";
 import { Camera, Image as ImageIcon, Check, Info, AlertTriangle, Play, HelpCircle } from "lucide-react";
 import { capturePhotoFromDevice, savePhotoLocally, getFormattedDate, sanitizeName } from "@/lib/photo-capture";
@@ -78,6 +79,12 @@ export default function CompressorsPage() {
     pumpTankDia: "",
     pumpTankLength: "",
     pumpTankPeri: "",
+    pumpInletPipeActive: false,
+    pumpInletPipePeri: "",
+    pumpInletPipeLength: "",
+    pumpOutletPipeActive: false,
+    pumpOutletPipePeri: "",
+    pumpOutletPipeLength: "",
     pumpAirTempC: "",
     pumpRunningPressure: "",
     pumpMeasuredPower: "",
@@ -302,12 +309,19 @@ export default function CompressorsPage() {
   };
 
   const pumpTankVolumeM3 = computePumpTankVolumeM3();
+
+  // Main volume = receiver + the pipe runs either side of it. Both pipes are
+  // optional; each is measured with a tape, so perimeter and length only.
+  const pumpInletPipeVolM3 = form.pumpInletPipeActive ? (pipeVolumeM3(form.pumpInletPipePeri, form.pumpInletPipeLength) ?? 0) : 0;
+  const pumpOutletPipeVolM3 = form.pumpOutletPipeActive ? (pipeVolumeM3(form.pumpOutletPipePeri, form.pumpOutletPipeLength) ?? 0) : 0;
+  const pumpMainVolumeM3 = pumpTankVolumeM3 + pumpInletPipeVolM3 + pumpOutletPipeVolM3;
+
   const pumpP1 = parseFloat(form.pumpP1) || 0;
   const pumpP2 = parseFloat(form.pumpP2) || 0;
   const pumpTimeSec = parseFloat(form.pumpTimeSec) || 0;
 
   const pumpActualFadM3Min = pumpTimeSec > 0
-    ? (pumpTankVolumeM3 * (pumpP2 - pumpP1)) / ((pumpTimeSec / 60) * 1.013)
+    ? (pumpMainVolumeM3 * (pumpP2 - pumpP1)) / ((pumpTimeSec / 60) * 1.013)
     : 0;
   const pumpActualFadCfm = pumpActualFadM3Min * 35.3147;
 
@@ -405,8 +419,8 @@ export default function CompressorsPage() {
   // Per-row FAD: V(m³) × ΔP / ((t/60) × 1.013), corrected with the temperature factor
   const pumpLapRows = pumpPressureRows.map((p, i) => {
     const t = lapTimes[i];
-    const fad = t && t > 0 && p > 0 && pumpTankVolumeM3 > 0
-      ? (pumpTankVolumeM3 * p) / ((t / 60) * 1.013)
+    const fad = t && t > 0 && p > 0 && pumpMainVolumeM3 > 0
+      ? (pumpMainVolumeM3 * p) / ((t / 60) * 1.013)
       : 0;
     return {
       pressure: p,
@@ -436,8 +450,8 @@ export default function CompressorsPage() {
       
       const p2Val = parseFloat(form.pumpP2);
       const loadVal = parseFloat(form.loadPressure);
-      if (pumpTankVolumeM3 > 0) {
-        pumpFadAtLoadUnloadM3Min = (pumpTankVolumeM3 * (p2Val - loadVal)) / (((timeP2 - timeLoad) / 60) * 1.013);
+      if (pumpMainVolumeM3 > 0) {
+        pumpFadAtLoadUnloadM3Min = (pumpMainVolumeM3 * (p2Val - loadVal)) / (((timeP2 - timeLoad) / 60) * 1.013);
       }
     }
   }
@@ -562,6 +576,13 @@ export default function CompressorsPage() {
       pumpTankDia: form.pumpActive && form.pumpTankCalcMethod === "DiaLength" ? parseFloat(form.pumpTankDia) : undefined,
       pumpTankLength: form.pumpActive && form.pumpTankCalcMethod !== "Direct" ? parseFloat(form.pumpTankLength) : undefined,
       pumpTankPeri: form.pumpActive && form.pumpTankCalcMethod === "PeriLength" ? parseFloat(form.pumpTankPeri) : undefined,
+      pumpInletPipeActive: form.pumpActive ? form.pumpInletPipeActive : undefined,
+      pumpInletPipePeri: form.pumpActive && form.pumpInletPipeActive ? parseFloat(form.pumpInletPipePeri) : undefined,
+      pumpInletPipeLength: form.pumpActive && form.pumpInletPipeActive ? parseFloat(form.pumpInletPipeLength) : undefined,
+      pumpOutletPipeActive: form.pumpActive ? form.pumpOutletPipeActive : undefined,
+      pumpOutletPipePeri: form.pumpActive && form.pumpOutletPipeActive ? parseFloat(form.pumpOutletPipePeri) : undefined,
+      pumpOutletPipeLength: form.pumpActive && form.pumpOutletPipeActive ? parseFloat(form.pumpOutletPipeLength) : undefined,
+      pumpMainVolumeM3: form.pumpActive ? pumpMainVolumeM3 : undefined,
       pumpActualFadM3Min: form.pumpActive ? pumpActualFadM3Min : undefined,
       pumpActualFadCfm: form.pumpActive ? pumpActualFadCfm : undefined,
       pumpRunningPressure: form.pumpActive && form.pumpRunningPressure ? parseFloat(form.pumpRunningPressure) : undefined,
@@ -647,6 +668,12 @@ export default function CompressorsPage() {
       pumpTankDia: "",
       pumpTankLength: "",
       pumpTankPeri: "",
+      pumpInletPipeActive: false,
+      pumpInletPipePeri: "",
+      pumpInletPipeLength: "",
+      pumpOutletPipeActive: false,
+      pumpOutletPipePeri: "",
+      pumpOutletPipeLength: "",
       pumpAirTempC: "",
       pumpRunningPressure: "",
       pumpMeasuredPower: "",
@@ -738,6 +765,12 @@ export default function CompressorsPage() {
       pumpTankDia: c.pumpTankDia?.toString() || "",
       pumpTankLength: c.pumpTankLength?.toString() || "",
       pumpTankPeri: c.pumpTankPeri?.toString() || "",
+      pumpInletPipeActive: !!c.pumpInletPipeActive,
+      pumpInletPipePeri: c.pumpInletPipePeri?.toString() || "",
+      pumpInletPipeLength: c.pumpInletPipeLength?.toString() || "",
+      pumpOutletPipeActive: !!c.pumpOutletPipeActive,
+      pumpOutletPipePeri: c.pumpOutletPipePeri?.toString() || "",
+      pumpOutletPipeLength: c.pumpOutletPipeLength?.toString() || "",
       pumpAirTempC: c.pumpAirTempC?.toString() || "",
       pumpRunningPressure: c.pumpRunningPressure?.toString() || "",
       pumpMeasuredPower: c.pumpMeasuredPower?.toString() || "",
@@ -1471,6 +1504,57 @@ export default function CompressorsPage() {
                       </div>
                       <div className="flex items-end text-xs text-slate-400 pb-2">
                         Equivalent Tank Volume in Cubic Meters: <strong className="text-white ml-1.5">{pumpTankVolumeM3.toFixed(3)} m³</strong>
+                      </div>
+                    </div>
+
+                    {/* Pipe volumes — optional. Measured with a tape, so perimeter and length. */}
+                    <div className="mt-4 p-4 rounded-xl border border-white/5 bg-slate-900/30">
+                      <h4 className="text-[11px] uppercase tracking-wider text-sky-400/90 font-semibold mb-1">Pipe volumes (optional)</h4>
+                      <p className="text-[11px] text-slate-500 mb-3">
+                        The pipe either side of the receiver holds air too. Add whichever runs you measured — leaving them out simply keeps the old receiver-only figure.
+                      </p>
+
+                      {([
+                        { key: "Inlet", active: "pumpInletPipeActive", peri: "pumpInletPipePeri", len: "pumpInletPipeLength", vol: pumpInletPipeVolM3, hint: "compressor → receiver" },
+                        { key: "Outlet", active: "pumpOutletPipeActive", peri: "pumpOutletPipePeri", len: "pumpOutletPipeLength", vol: pumpOutletPipeVolM3, hint: "receiver → plant header" },
+                      ] as const).map((pipe) => (
+                        <div key={pipe.key} className="mb-3 last:mb-0">
+                          <label className="flex items-center gap-2 cursor-pointer mb-2">
+                            <input
+                              type="checkbox"
+                              className="accent-sky-500"
+                              checked={!!form[pipe.active]}
+                              onChange={(e) => setForm({ ...form, [pipe.active]: e.target.checked })}
+                            />
+                            <span className="text-xs font-medium text-slate-200">{pipe.key} pipe</span>
+                            <span className="text-[10px] text-slate-500">({pipe.hint})</span>
+                          </label>
+                          {form[pipe.active] && (
+                            <div className="grid gap-3 md:grid-cols-3 pl-6">
+                              <div>
+                                <Label className="text-[10px] text-slate-400">Perimeter (mm)</Label>
+                                <Input className="h-8 text-xs mt-1" type="number" step="1" value={form[pipe.peri]} onChange={(e) => setForm({ ...form, [pipe.peri]: e.target.value })} placeholder="e.g. 250" />
+                              </div>
+                              <div>
+                                <Label className="text-[10px] text-slate-400">Length (mm)</Label>
+                                <Input className="h-8 text-xs mt-1" type="number" step="1" value={form[pipe.len]} onChange={(e) => setForm({ ...form, [pipe.len]: e.target.value })} placeholder="e.g. 6000" />
+                              </div>
+                              <div className="flex items-end text-[11px] text-slate-400 pb-1.5">
+                                Volume: <strong className="text-white ml-1.5">{pipe.vol.toFixed(4)} m³</strong>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+
+                      <div className="mt-3 pt-3 border-t border-white/5 flex flex-wrap items-center gap-x-2 text-xs">
+                        <span className="text-slate-400">Main volume used for FAD</span>
+                        <strong className="text-sky-300 text-sm">{pumpMainVolumeM3.toFixed(3)} m³</strong>
+                        <span className="text-[10px] text-slate-500">
+                          = tank {pumpTankVolumeM3.toFixed(3)}
+                          {pumpInletPipeVolM3 > 0 ? ` + inlet ${pumpInletPipeVolM3.toFixed(4)}` : ""}
+                          {pumpOutletPipeVolM3 > 0 ? ` + outlet ${pumpOutletPipeVolM3.toFixed(4)}` : ""} m³
+                        </span>
                       </div>
                     </div>
                   </div>

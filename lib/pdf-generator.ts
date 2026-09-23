@@ -1,6 +1,7 @@
 import { jsPDF } from "jspdf";
 import autoTable, { type CellInput, type RowInput, type Styles, type UserOptions } from "jspdf-autotable";
 import type { CompanyProfile, CompressorEntry } from "@/lib/store";
+import { lapEnergy, mainVolume, parseLaps, pipeAreaM2 } from "@/lib/compressor-calc";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Compressor Efficiency Assessment — PDF
@@ -76,10 +77,9 @@ function ratedCfm(c: CompressorEntry): number | null {
   }
 }
 
-function tankVolumeM3(c: CompressorEntry): number | null {
-  const v = num(c.pumpTankVolume);
-  if (v === null || v <= 0) return null;
-  return c.pumpTankVolumeUnit === "Liters" ? v / 1000 : v;
+/** Rated pressure in bar, whatever the name-plate was entered in. */
+function ratedBar(c: CompressorEntry): number | null {
+  return num(c.ratedPressure);
 }
 
 /** Design vs actual for whichever test was done (pump-up wins when both are present, as PostMan does). */
@@ -240,6 +240,246 @@ function parseJson<T>(s: unknown, fallback: T): T {
   try { return JSON.parse(s) as T; } catch { return fallback; }
 }
 
+// ── charts, drawn as vectors so they stay sharp and need no browser ─────────
+
+function niceMax(v: number): number {
+  if (!isFinite(v) || v <= 0) return 1;
+  const p = Math.pow(10, Math.floor(Math.log10(v)));
+  const m = v / p;
+  return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 2.5 ? 2.5 : m <= 5 ? 5 : 10) * p;
+}
+
+function chartFrame(doc: Doc, x: number, y: number, w: number, h: number, title: string, unit?: string) {
+  doc.setFillColor(...C.white);
+  doc.setDrawColor(...C.line);
+  doc.setLineWidth(0.25);
+  doc.roundedRect(x, y, w, h, 1.5, 1.5, "FD");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor(...C.ink);
+  doc.text(title, x + 3, y + 5);
+  if (unit) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(6.5);
+    doc.setTextColor(...C.muted);
+    doc.text(unit, x + w - 3, y + 5, { align: "right" });
+  }
+}
+
+/** Vertical bars with the value printed over each one — the suction-velocity chart. */
+function barChart(doc: Doc, x: number, y: number, w: number, h: number, o: { title: string; unit?: string; labels: string[]; values: number[]; xTitle?: string }) {
+  chartFrame(doc, x, y, w, h, o.title, o.unit);
+  const px = x + 13, py = y + 9, pw = w - 17, ph = h - (o.xTitle ? 22 : 17);
+  const max = niceMax(Math.max(0, ...o.values));
+  doc.setLineWidth(0.15);
+  for (let i = 0; i <= 4; i++) {
+    const gy = py + ph - (ph * i) / 4;
+    doc.setDrawColor(...C.line);
+    doc.line(px, gy, px + pw, gy);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(5.5);
+    doc.setTextColor(...C.muted);
+    doc.text(((max * i) / 4).toFixed(max < 10 ? 1 : 0), px - 1.5, gy + 1, { align: "right" });
+  }
+  const slot = pw / Math.max(o.values.length, 1);
+  const bw = Math.min(11, slot * 0.6);
+  o.values.forEach((v, i) => {
+    const cx = px + i * slot + slot / 2;
+    const bh = max > 0 ? (Math.max(0, v) / max) * ph : 0;
+    doc.setFillColor(...C.accent);
+    doc.rect(cx - bw / 2, py + ph - bh, bw, bh, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(5.8);
+    doc.setTextColor(...C.ink);
+    doc.text(v.toFixed(2), cx, py + ph - bh - 1.4, { align: "center" });
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(5.8);
+    doc.setTextColor(...C.muted);
+    doc.text(o.labels[i] ?? String(i + 1), cx, py + ph + 3.6, { align: "center" });
+  });
+  if (o.xTitle) {
+    doc.setFontSize(5.8);
+    doc.setTextColor(...C.muted);
+    doc.text(o.xTitle, x + w / 2, y + h - 2.5, { align: "center" });
+  }
+}
+
+/**
+ * The suction port as it was traversed: a circle for a round duct, a rectangle
+ * for a rectangular one, with the measurement points numbered where they were
+ * taken. An odd count puts the last point in the centre, which is how a round
+ * duct is normally traversed (four around the wall plus one in the middle).
+ */
+function portDiagram(doc: Doc, x: number, y: number, w: number, h: number, shape: "Circle" | "Rectangle", points: number, caption: string) {
+  chartFrame(doc, x, y, w, h, "Suction port", `${points} point${points === 1 ? "" : "s"}`);
+  const cx = x + w / 2, cy = y + (h - 6) / 2 + 5;
+  const boxW = Math.min(w - 16, 46), boxH = Math.min(h - 20, 34);
+  const spots: [number, number][] = [];
+
+  if (shape === "Circle") {
+    const r = Math.min(boxW, boxH) / 2;
+    doc.setFillColor(219, 234, 254);
+    doc.setDrawColor(...C.accent);
+    doc.setLineWidth(0.4);
+    doc.circle(cx, cy, r, "FD");
+    const centre = points % 2 === 1;
+    const ring = centre ? points - 1 : points;
+    for (let i = 0; i < ring; i++) {
+      const a = -Math.PI / 2 + (2 * Math.PI * i) / Math.max(ring, 1);
+      spots.push([cx + Math.cos(a) * r * 0.62, cy + Math.sin(a) * r * 0.62]);
+    }
+    if (centre) spots.push([cx, cy]);
+  } else {
+    doc.setFillColor(219, 234, 254);
+    doc.setDrawColor(...C.accent);
+    doc.setLineWidth(0.4);
+    doc.rect(cx - boxW / 2, cy - boxH / 2, boxW, boxH, "FD");
+    const cols = Math.ceil(Math.sqrt(points));
+    const rows = Math.ceil(points / cols);
+    for (let i = 0; i < points; i++) {
+      const r = Math.floor(i / cols), c = i % cols;
+      const inRow = Math.min(cols, points - r * cols);
+      spots.push([
+        cx - boxW / 2 + (boxW * (c + 1)) / (inRow + 1),
+        cy - boxH / 2 + (boxH * (r + 1)) / (rows + 1),
+      ]);
+    }
+  }
+
+  spots.forEach(([sx, sy], i) => {
+    doc.setFillColor(...C.white);
+    doc.setDrawColor(...C.primary);
+    doc.setLineWidth(0.3);
+    doc.roundedRect(sx - 3, sy - 2.4, 6, 4.8, 0.8, 0.8, "FD");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(6.2);
+    doc.setTextColor(...C.primary);
+    doc.text(String(i + 1), sx, sy + 1.5, { align: "center" });
+  });
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(5.8);
+  doc.setTextColor(...C.muted);
+  doc.text(doc.splitTextToSize(caption, w - 6)[0] as string, x + w / 2, y + h - 2.5, { align: "center" });
+}
+
+/** Pressure against elapsed time, with the energy-meter readings marked. */
+function pressureTimeChart(doc: Doc, x: number, y: number, w: number, h: number, laps: Array<{ pressure: number; timeSec: number | null; kwh?: string }>) {
+  chartFrame(doc, x, y, w, h, "Receiver pressure vs time", "bar against seconds");
+  const pts = laps
+    .map((l) => ({ t: num(l.timeSec), p: num(l.pressure), kwh: num(l.kwh) }))
+    .filter((l): l is { t: number; p: number; kwh: number | null } => l.t !== null && l.p !== null)
+    .sort((a, b) => a.t - b.t);
+  if (pts.length < 2) {
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(7);
+    doc.setTextColor(...C.muted);
+    doc.text("Not enough lap times recorded to plot.", x + w / 2, y + h / 2, { align: "center" });
+    return;
+  }
+  const px = x + 13, py = y + 9, pw = w - 18, ph = h - 20;
+  const tMax = niceMax(Math.max(...pts.map((p) => p.t)));
+  const pMax = niceMax(Math.max(...pts.map((p) => p.p)));
+  const X = (t: number) => px + (t / tMax) * pw;
+  const Y = (p: number) => py + ph - (p / pMax) * ph;
+
+  doc.setLineWidth(0.15);
+  for (let i = 0; i <= 4; i++) {
+    const gy = py + ph - (ph * i) / 4;
+    doc.setDrawColor(...C.line);
+    doc.line(px, gy, px + pw, gy);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(5.5);
+    doc.setTextColor(...C.muted);
+    doc.text(((pMax * i) / 4).toFixed(1), px - 1.5, gy + 1, { align: "right" });
+  }
+  for (let i = 0; i <= 4; i++) {
+    const t = (tMax * i) / 4;
+    doc.setFontSize(5.5);
+    doc.setTextColor(...C.muted);
+    doc.text(t.toFixed(0), X(t), py + ph + 3.4, { align: "center" });
+  }
+
+  doc.setDrawColor(...C.accent);
+  doc.setLineWidth(0.5);
+  for (let i = 1; i < pts.length; i++) doc.line(X(pts[i - 1].t), Y(pts[i - 1].p), X(pts[i].t), Y(pts[i].p));
+  pts.forEach((p) => {
+    doc.setFillColor(...C.accent);
+    doc.circle(X(p.t), Y(p.p), 0.8, "F");
+  });
+
+  // energy-meter readings along the top, where they were taken
+  const withKwh = pts.filter((p) => p.kwh !== null);
+  if (withKwh.length) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(5);
+    doc.setTextColor(...C.warn);
+    withKwh.forEach((p, i) => {
+      if (i % Math.ceil(withKwh.length / 6) !== 0 && i !== withKwh.length - 1) return;
+      doc.text(`${p.kwh!.toFixed(2)}`, X(p.t), Y(p.p) - 2, { align: "center" });
+    });
+    doc.setTextColor(...C.muted);
+    doc.text("kWh readings shown above the curve", x + w / 2, y + h - 2.5, { align: "center" });
+  } else {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(5.5);
+    doc.setTextColor(...C.muted);
+    doc.text("Elapsed time (s)", x + w / 2, y + h - 2.5, { align: "center" });
+  }
+}
+
+/** The photo's layout: design parameters on the left, what was measured on the right. */
+function designVsMeasuredTable(doc: Doc, y: number, design: [string, string][], measured: [string, string][], footer: [string, string, string, string][]): number {
+  const rows = Math.max(design.length, measured.length);
+  const body: RowInput[] = [];
+  for (let i = 0; i < rows; i++) {
+    const d = design[i] ?? ["", ""];
+    const m = measured[i] ?? ["", ""];
+    body.push([
+      { content: d[0], styles: { textColor: C.ink } },
+      { content: d[1], styles: { halign: "right", fontStyle: "bold" } },
+      { content: m[0], styles: { textColor: C.ink } },
+      { content: m[1], styles: { halign: "right", fontStyle: "bold" } },
+    ]);
+  }
+  for (const [a, b, c2, d2] of footer) {
+    body.push([
+      { content: a, styles: { fontStyle: "bold", fillColor: C.fill } },
+      { content: b, styles: { halign: "right", fontStyle: "bold", fillColor: C.fill } },
+      { content: c2, styles: { fontStyle: "bold", fillColor: C.fill } },
+      { content: d2, styles: { halign: "right", fontStyle: "bold", fillColor: C.fill } },
+    ]);
+  }
+  return baseTable(doc, y, {
+    head: [[
+      { content: "Design Parameters", colSpan: 2, styles: { halign: "center" } },
+      { content: "Measurement Parameters", colSpan: 2, styles: { halign: "center" } },
+    ]],
+    body,
+    alternateRowStyles: {},
+    columnStyles: { 0: { cellWidth: 46 }, 1: { cellWidth: 25 }, 2: { cellWidth: 60 }, 3: { cellWidth: 51 } },
+  });
+}
+
+/** Formula, the numbers put into it, and the answer — so a reader can follow the sum. */
+function calcSummary(doc: Doc, y: number, title: string, steps: Array<[string, string, string]>): number {
+  y = subTitle(doc, y, title);
+  return baseTable(doc, y, {
+    head: [["Quantity", "Formula", "Substitution", "Result"]],
+    body: steps.map(([q, f, sr]) => {
+      const [sub, res] = sr.split("|");
+      return [
+        { content: q, styles: { fontStyle: "bold" as const } },
+        { content: f, styles: { fontSize: 7, textColor: C.muted } },
+        { content: sub ?? "", styles: { fontSize: 7 } },
+        { content: res ?? "", styles: { halign: "right" as const, fontStyle: "bold" as const, textColor: C.primary } },
+      ];
+    }),
+    styles: { fontSize: 7.6, cellPadding: 1.6 },
+    columnStyles: { 0: { cellWidth: 40 }, 1: { cellWidth: 52 }, 2: { cellWidth: 56 }, 3: { cellWidth: 34 } },
+  });
+}
+
 // ── the report ──────────────────────────────────────────────────────────────
 
 export function generateCompressorPDF(
@@ -360,6 +600,79 @@ export function generateCompressorPDF(
     columnStyles: { 0: { cellWidth: 7, halign: "center" }, 1: { cellWidth: 22 }, 2: { cellWidth: 16 }, 3: { halign: "right" }, 4: { halign: "right" }, 5: { halign: "right" }, 6: { halign: "right" }, 7: { halign: "right" }, 8: { halign: "right" }, 9: { cellWidth: 34 } },
   });
 
+  // ── Plant compressor profile ──────────────────────────────────────────────
+  // What the plant actually runs, taken as a whole: how the installed power and
+  // the air it makes are split between the machines, and what each costs to run.
+  if (compressors.length > 0) {
+    y = subTitle(doc, y, "Plant compressor profile");
+    const measuredTotalKw = perf.reduce((s, { p }) => s + (p.measuredKw ?? 0), 0);
+    const actualTotalCfm = perf.reduce((s, { p }) => s + (p.actualCfm ?? 0), 0);
+    const plantSec = actualTotalCfm > 0 && measuredTotalKw > 0 ? measuredTotalKw / actualTotalCfm : null;
+    const plantDesignSec = totalRatedCfm > 0 && totalRatedKw > 0 ? totalRatedKw / totalRatedCfm : null;
+
+    y = baseTable(doc, y, {
+      head: [["#", "Machine tag", "Type", "Rated kW", "Share of plant kW", "Rated CFM", "Share of plant air", "Actual CFM", "Actual kW/CFM", "Status"]],
+      body: perf.map(({ c, p }, i) => {
+        const rKw = num(c.ratedKw) ?? 0;
+        const rCfm = ratedCfm(c) ?? 0;
+        return [
+          String(i + 1),
+          txt(c.machineTag),
+          txt(c.compressorType),
+          fmt(rKw, 1),
+          totalRatedKw > 0 ? `${((rKw / totalRatedKw) * 100).toFixed(1)} %` : "—",
+          fmt(rCfm, 0),
+          totalRatedCfm > 0 ? `${((rCfm / totalRatedCfm) * 100).toFixed(1)} %` : "—",
+          fmt(p.actualCfm, 1),
+          fmt(p.actualSec, 3),
+          { content: p.verdict.label, styles: toneStyle(p.verdict.tone) },
+        ];
+      }),
+      foot: [[
+        { content: "Plant total", colSpan: 3, styles: { fontStyle: "bold" } },
+        { content: totalRatedKw.toFixed(1), styles: { halign: "right", fontStyle: "bold" } },
+        { content: "100 %", styles: { halign: "right", fontStyle: "bold" } },
+        { content: totalRatedCfm.toFixed(0), styles: { halign: "right", fontStyle: "bold" } },
+        { content: "100 %", styles: { halign: "right", fontStyle: "bold" } },
+        { content: actualTotalCfm > 0 ? actualTotalCfm.toFixed(1) : "—", styles: { halign: "right", fontStyle: "bold" } },
+        { content: plantSec !== null ? plantSec.toFixed(3) : "—", styles: { halign: "right", fontStyle: "bold" } },
+        { content: plantDesignSec !== null && plantSec !== null ? (plantSec > plantDesignSec ? "Above design" : "At or below design") : "—", styles: { halign: "center", fontStyle: "bold" } },
+      ]],
+      footStyles: { fillColor: C.fill, textColor: C.ink },
+      styles: { fontSize: 7.4, cellPadding: 1.5 },
+      columnStyles: { 0: { cellWidth: 7, halign: "center" }, 1: { cellWidth: 24 }, 2: { cellWidth: 20 }, 3: { halign: "right" }, 4: { halign: "right" }, 5: { halign: "right" }, 6: { halign: "right" }, 7: { halign: "right" }, 8: { halign: "right" }, 9: { cellWidth: 28 } },
+    });
+
+    // Installed power and measured air side by side, machine by machine.
+    const tags = perf.map(({ c }) => txt(c.machineTag, "—"));
+    const chartH = 46;
+    y = ensureSpace(doc, y, chartH + 6);
+    const half = (CONTENT_W - 4) / 2;
+    barChart(doc, M_LEFT, y, half, chartH, {
+      title: "Rated power by machine",
+      unit: "kW",
+      labels: tags,
+      values: perf.map(({ c }) => num(c.ratedKw) ?? 0),
+    });
+    barChart(doc, M_LEFT + half + 4, y, half, chartH, {
+      title: "Air delivery — rated vs measured",
+      unit: "CFM",
+      labels: tags,
+      values: perf.map(({ p }) => p.actualCfm ?? p.designCfm ?? 0),
+    });
+    y += chartH + 5;
+
+    if (plantSec !== null && plantDesignSec !== null) {
+      const gap = ((plantSec - plantDesignSec) / plantDesignSec) * 100;
+      y = paragraph(
+        doc,
+        y,
+        "Plant reading",
+        `Taken together the tested machines draw ${measuredTotalKw.toFixed(1)} kW to make ${actualTotalCfm.toFixed(0)} CFM, a plant specific energy consumption of ${plantSec.toFixed(3)} kW/CFM against ${plantDesignSec.toFixed(3)} kW/CFM by name-plate — ${Math.abs(gap).toFixed(1)} % ${gap > 0 ? "above" : "below"} design. ${gap > SEC_TOLERANCE_PCT ? "Worth taking the flagged machines in hand first: they carry most of that gap." : "The fleet is running close to its design figures."}`
+      );
+    }
+  }
+
   doc.setFont("helvetica", "italic");
   doc.setFontSize(7.5);
   doc.setTextColor(...C.muted);
@@ -472,6 +785,28 @@ export function generateCompressorPDF(
       ]);
 
       const vels = parseJson<number[]>(c.fadVelocities, []);
+
+      // The traverse as it was taken: the velocities beside the port they came from.
+      if (vels.length) {
+        const shape: "Circle" | "Rectangle" | null =
+          c.fadAreaType === "Circle" ? "Circle" : c.fadAreaType === "Rectangle" ? "Rectangle" : null;
+        const chartH = 46;
+        y = ensureSpace(doc, y, chartH + 6);
+        const diagW = shape ? 54 : 0;
+        const barW = CONTENT_W - (shape ? diagW + 4 : 0);
+        barChart(doc, M_LEFT, y, barW, chartH, {
+          title: "Suction velocities",
+          unit: "m/s",
+          labels: vels.map((_, i) => String(i + 1)),
+          values: vels.map((v) => num(v) ?? 0),
+          xTitle: "Measurement points",
+        });
+        if (shape) {
+          portDiagram(doc, M_LEFT + barW + 4, y, diagW, chartH, shape, vels.length, shape === "Circle" ? "Round duct" : "Rectangular duct");
+        }
+        y += chartH + 5;
+      }
+
       if (vels.length) {
         const perRow = 8;
         const rows: RowInput[] = [];
@@ -488,21 +823,48 @@ export function generateCompressorPDF(
           alternateRowStyles: {},
         });
       }
+      // How the figures were arrived at.
+      const avgV = num(c.fadAvgVelocity);
+      const areaM2 = num(c.fadSuctionArea);
+      const m3s = num(c.fadAirDeliveryM3Sec);
+      const cfmFad = num(c.fadAirDeliveryCfm);
+      const fadKw = num(c.fadMeasuredPower) ?? num(c.genLoadKw);
+      y = calcSummary(doc, y, "Calculation summary — anemometer test", [
+        ["Average velocity", "sum of point velocities / number of points", vels.length ? `${vels.map((v) => fmt(v, 2)).join(" + ")} / ${vels.length}|${fmt(avgV, 2)} m/s` : `|${fmt(avgV, 2)} m/s`],
+        ["Suction area", c.fadAreaType === "Rectangle" ? "L x B" : c.fadAreaType === "Circle" ? "pi x d^2 / 4" : "entered directly", `|${fmt(areaM2, 4)} m2`],
+        ["Air delivery", "area x average velocity", `${fmt(areaM2, 4)} x ${fmt(avgV, 2)}|${fmt(m3s, 4)} m3/s`],
+        ["Air delivery", "m3/s x 3600 ; x 35.3147 / 60 for CFM", `${fmt(m3s, 4)} x 3600|${fmt(c.fadAirDeliveryM3Hr, 1)} m3/hr`],
+        ["Free air delivery", "m3/hr / 1.699 (m3/hr per CFM)", `${fmt(c.fadAirDeliveryM3Hr, 1)} / 1.699|${fmt(cfmFad, 1)} CFM`],
+        ["Actual SEC", "measured power / CFM", `${fmt(fadKw, 2)} / ${fmt(cfmFad, 1)}|${fmt(p.actualSec, 3)} kW/CFM`],
+        ["Actual air generation", "CFM / measured power", `${fmt(cfmFad, 1)} / ${fmt(fadKw, 2)}|${fmt(p.actualAirGen, 2)} CFM/kW`],
+      ]);
+
       if (txt(c.fadDescription, "") !== "") y = paragraph(doc, y, "FAD remarks", txt(c.fadDescription));
     }
 
     // Pump-up test
     if (c.pumpActive) {
       y = subTitle(doc, y, "Free air delivery — receiver pump-up test");
-      const volM3 = tankVolumeM3(c);
+      const mv = mainVolume(c);
+      const volM3 = mv.total;
       const tankDesc = c.pumpTankCalcMethod === "DiaLength"
         ? `from dia ${txt(c.pumpTankDia)} mm × length ${txt(c.pumpTankLength)} mm`
         : c.pumpTankCalcMethod === "PeriLength"
           ? `from perimeter ${txt(c.pumpTankPeri)} mm × length ${txt(c.pumpTankLength)} mm`
           : "entered directly";
+      const pipeLine = (label: string, active: boolean | undefined, peri: unknown, len: unknown, vol: number | null) =>
+        active && vol !== null
+          ? [`${label} pipe`, `perimeter ${txt(peri)} mm × length ${txt(len)} mm  →  bore ${fmt(pipeAreaM2(peri), 5, "m²")}  ·  ${vol.toFixed(4)} m³`] as [string, string]
+          : null;
+      const pipeRows = [
+        pipeLine("Inlet", c.pumpInletPipeActive, c.pumpInletPipePeri, c.pumpInletPipeLength, mv.inlet),
+        pipeLine("Outlet", c.pumpOutletPipeActive, c.pumpOutletPipePeri, c.pumpOutletPipeLength, mv.outlet),
+      ].filter((r): r is [string, string] => r !== null);
       y = kvTable(doc, y, [
-        ["Receiver volume", `${fmt(c.pumpTankVolume, 2, txt(c.pumpTankVolumeUnit, ""))}${volM3 !== null ? `  (${volM3.toFixed(3)} m³)` : ""}`],
+        ["Receiver volume", `${fmt(c.pumpTankVolume, 2, txt(c.pumpTankVolumeUnit, ""))}${mv.tank !== null ? `  (${mv.tank.toFixed(3)} m³)` : ""}`],
         ["Volume basis", tankDesc],
+        ...pipeRows,
+        ["Main volume used", `${volM3 !== null ? `${volM3.toFixed(3)} m³` : "—"}  =  ${mv.basis}`],
         ["Start pressure P1", fmt(c.pumpP1, 1, "bar")],
         ["End pressure P2", fmt(c.pumpP2, 1, "bar")],
         ["Pump-up time", fmt(c.pumpTimeSec, 1, "s")],
@@ -531,11 +893,85 @@ export function generateCompressorPDF(
           columnStyles: { 0: { cellWidth: 8, halign: "center" }, 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" }, 5: { halign: "right" }, 6: { halign: "right" } },
         });
       }
+      // Pressure against time, with the energy-meter readings marked on it.
+      const lapRecords = parseLaps(c.pumpLapData);
+      if (lapRecords.filter((l) => num(l.timeSec) !== null).length >= 2) {
+        const chartH = 52;
+        y = ensureSpace(doc, y, chartH + 6);
+        pressureTimeChart(doc, M_LEFT, y, CONTENT_W, chartH, lapRecords);
+        y += chartH + 5;
+      }
+
+      // What the energy meter did over the run.
+      const energy = lapEnergy(lapRecords);
+      if (energy.readings > 0) {
+        y = subTitle(doc, y, "Energy drawn during the pump-up");
+        y = kvTable(doc, y, [
+          ["Meter at start", fmt(energy.first, 2, "kWh")],
+          ["Meter at end", fmt(energy.last, 2, "kWh")],
+          ["Energy used", fmt(energy.used, 3, "kWh")],
+          ["Run time", fmt(energy.seconds, 1, "s")],
+          ["Average power over the run", fmt(energy.avgKw, 2, "kW")],
+          ["Readings taken", `${energy.readings} of ${lapRecords.length} laps`],
+        ]);
+      }
+
+      const pumpKw = num(c.pumpMeasuredPower) ?? num(c.genLoadKw) ?? energy.avgKw;
+      y = calcSummary(doc, y, "Calculation summary — pump-up test", [
+        ["Main volume", "tank + inlet pipe + outlet pipe", `${mv.basis}|${volM3 !== null ? `${volM3.toFixed(3)} m³` : "—"}`],
+        ["Pipe bore", "perimeter^2 / (4 x pi)", pipeRows.length
+          ? `${[
+              c.pumpInletPipeActive ? `inlet ${fmt(c.pumpInletPipePeri, 0)} mm -> ${fmt(pipeAreaM2(c.pumpInletPipePeri), 5)} m2` : "",
+              c.pumpOutletPipeActive ? `outlet ${fmt(c.pumpOutletPipePeri, 0)} mm -> ${fmt(pipeAreaM2(c.pumpOutletPipePeri), 5)} m2` : "",
+            ].filter(Boolean).join("; ")}|${fmt((mv.inlet ?? 0) + (mv.outlet ?? 0), 4)} m3`
+          : `no pipe measured|—`],
+        ["Pressure rise", "P2 - P1", `${fmt(c.pumpP2, 1)} - ${fmt(c.pumpP1, 1)}|${fmt((num(c.pumpP2) ?? 0) - (num(c.pumpP1) ?? 0), 1)} bar`],
+        ["Free air delivery", "V x (P2 - P1) / ((t/60) x 1.013)", `${volM3 !== null ? volM3.toFixed(3) : "—"} x ${fmt((num(c.pumpP2) ?? 0) - (num(c.pumpP1) ?? 0), 1)} / ((${fmt(c.pumpTimeSec, 1)}/60) x 1.013)|${fmt(c.pumpActualFadM3Min, 3)} m3/min`],
+        ["Temperature correction", "273 / (273 + T)", num(c.pumpAirTempC) !== null ? `273 / (273 + ${fmt(c.pumpAirTempC, 1)})|${fmt(c.pumpTempFactor, 4)}` : `air temperature not recorded|—`],
+        ["Free air delivery", "m3/min x 35.3147", `${fmt(c.pumpActualFadM3Min, 3)} x 35.3147|${fmt(c.pumpActualFadCfm, 1)} CFM`],
+        ["Actual SEC", "measured power / CFM", `${fmt(pumpKw, 2)} / ${fmt(c.pumpActualFadCfm, 1)}|${fmt(p.actualSec, 3)} kW/CFM`],
+        ["Actual air generation", "CFM / measured power", `${fmt(c.pumpActualFadCfm, 1)} / ${fmt(pumpKw, 2)}|${fmt(p.actualAirGen, 2)} CFM/kW`],
+      ]);
+
       if (txt(c.pumpDescription, "") !== "") y = paragraph(doc, y, "Pump-up remarks", txt(c.pumpDescription));
     }
 
-    // design vs actual
+    // The plant's own way of reading a compressor test: design on the left,
+    // what the instruments said on the right, the three ratios underneath.
     if (p.test) {
+      const isFad = p.test === "FAD";
+      y = subTitle(doc, y, `${txt(c.compressorType, "Compressor")} performance  (at ${fmt(c.processPressure ?? c.ratedPressure, 1)} kg/cm² setting)`);
+      const designCol: [string, string][] = [
+        ["Design Pressure, Bar", fmt(ratedBar(c), 1)],
+        ["Motor kW", fmt(c.ratedKw, 1)],
+        ["Motor Efficiency, %", fmt(c.motorEfficiency, 1)],
+        ["Rated capacity", num(c.ratedCapacity) !== null ? `${c.ratedCapacity} ${txt(c.ratedCapacityUnit, "")}`.trim() : "—"],
+        ["Operating days / year", num(c.annualOperatingDays) !== null ? String(c.annualOperatingDays) : "—"],
+      ];
+      const mv2 = mainVolume(c);
+      const measuredCol: [string, string][] = isFad
+        ? [
+            ["Running Pressure, Bar", fmt(c.fadRunningPressure, 1)],
+            ["Measured Power, kW", fmt(num(c.fadMeasuredPower) ?? num(c.genLoadKw), 1)],
+            ["Avg Velocity, m/s", fmt(c.fadAvgVelocity, 1)],
+            ["Suction Area, Sqm", fmt(c.fadSuctionArea, 4)],
+            ["Air Delivery, m³/Sec", fmt(c.fadAirDeliveryM3Sec, 3)],
+            ["m³/hr", fmt(c.fadAirDeliveryM3Hr, 1)],
+          ]
+        : [
+            ["Running Pressure, Bar", fmt(c.pumpRunningPressure, 1)],
+            ["Measured Power, kW", fmt(num(c.pumpMeasuredPower) ?? num(c.genLoadKw), 1)],
+            ["Main volume, m³", mv2.total !== null ? mv2.total.toFixed(3) : "—"],
+            ["Pressure rise, Bar", fmt((num(c.pumpP2) ?? 0) - (num(c.pumpP1) ?? 0), 1)],
+            ["Pump-up time, s", fmt(c.pumpTimeSec, 1)],
+            ["Air Delivery, m³/min", fmt(c.pumpActualFadM3Min, 3)],
+          ];
+      y = designVsMeasuredTable(doc, y, designCol, measuredCol, [
+        ["Design CFM", fmt(p.designCfm, 0), "CFM", fmt(p.actualCfm, 1)],
+        ["Design kW/CFM", fmt(p.designSec, 3), "Actual kW/CFM", fmt(p.actualSec, 3)],
+        ["Design CFM/kW", fmt(p.designAirGen, 2), "Actual CFM/kW", fmt(p.actualAirGen, 2)],
+      ]);
+
       y = subTitle(doc, y, `Design vs actual (${p.test} test)`);
       const row = (metric: string, design: string, actual: string, dev: number | null, worseWhenHigher: boolean) => {
         let tone: Verdict["tone"] = "muted";

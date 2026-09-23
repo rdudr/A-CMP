@@ -115,6 +115,15 @@ export type CompressorEntry = {
   pumpTankDia?: number | null;
   pumpTankLength?: number | null;
   pumpTankPeri?: number | null;
+  // Main volume = tank + inlet pipe + outlet pipe. Both pipes are optional and
+  // are measured with a tape, so perimeter and length only (see lib/compressor-calc.ts).
+  pumpInletPipeActive?: boolean;
+  pumpInletPipePeri?: number | null; // mm
+  pumpInletPipeLength?: number | null; // mm
+  pumpOutletPipeActive?: boolean;
+  pumpOutletPipePeri?: number | null; // mm
+  pumpOutletPipeLength?: number | null; // mm
+  pumpMainVolumeM3?: number | null; // tank + pipes, the volume the FAD uses
   pumpActualFadM3Min?: number | null;
   pumpActualFadCfm?: number | null;
   pumpRunningPressure?: number | null;
