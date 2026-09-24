@@ -55,6 +55,21 @@ convenience and ignored when a file is imported back into the app:
 | `pumpTankVolumeM3` | receiver volume in m³ whatever unit the engineer typed |
 | `luLoadHours`, `luUnloadHours`, `luTotalHours` | last − first reading of the load / unload hour-meter table (`luData`); PostMan's *% loaded* |
 
+## What the report prints from it (Sept 2026)
+
+PostMan lays the chapter out as this app's own report does: a fleet summary
+(installed kW, rated CFM, how many were tested, how many flagged), design
+ratings, performance test results with the verdict, and a plant compressor
+profile — each machine's share of the plant's power and air, and the plant
+SEC against design — with charts. Then, per machine: name-plate, electrical
+readings loaded and unloaded, the three-reading hour meter with its load
+bands, the anemometer traverse, the pump-up worked from the **main volume**
+with the lap table, the pressure-against-time chart, the energy drawn, the
+worked formula, design vs actual, the nine-point thermal survey and the
+observations. Checked against a workbook built by this app's own code:
+main volume 2.0567865 m³, FAD 156.784 CFM, SEC deviation +2.56 %, energy
+7.44 kWh / 160.38 kW average, 33.3 % loaded — identical on both sides.
+
 Compressors **merge by `machineTag`** in PostMan: a compressor in the file
 replaces its earlier copy, the rest stay — the same export twice, or two
 engineers' partial files, never duplicate a machine.
@@ -75,9 +90,12 @@ The two rules from it:
 
 1. **A change here is a change there.** When a field is added, renamed or
    re-unitised, or the SEC / FAD / pump-up arithmetic changes
-   (`app/(console)/compressors/page.tsx`, `lib/pdf-generator.ts`), PostMan's
-   `importACmp` / `compressorCalc` and the tables above are changed in the
-   same sitting. Likewise, a wording, unit or verdict PostMan improves in the
+   (`lib/compressor-calc.ts`, `app/(console)/compressors/page.tsx`,
+   `lib/pdf-generator.ts`), PostMan's `importACmp` (`src/p8_sld.js`) and its
+   mirror of this app's model and report (`src/p22_acmp.js` —
+   `acMainVolume`, `pipeVolumeM3`, `acLapEnergy`, `acLuRows`, `acPerf`,
+   `buildCompressorSection`) and the tables above are changed in the same
+   sitting. Likewise, a wording, unit or verdict PostMan improves in the
    report is carried back into this app's screens and PDF. The verdict shared
    today: actual SEC more than 10 % above design is flagged.
 2. **Push every repository touched** (`rdudr/A-CMP` and `rdudr/PostMAN`)
